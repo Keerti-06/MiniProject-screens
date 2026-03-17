@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "airline_luggage",
+    "slug": "airline-luggage",
+    "version": "1.0.0",
+    "android": {
+      "config": {
+        "usesCleartextTraffic": true
+      }
+    }
+  }
+}

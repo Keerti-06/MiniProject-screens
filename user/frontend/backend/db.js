@@ -3,10 +3,11 @@ require("dotenv").config();
 
 const db = mysql.createConnection({
     // Force 127.0.0.1 to avoid the 'ECONNREFUSED ::1' error
-    host: process.env.DB_HOST || "127.0.0.1", 
+    host: process.env.DB_HOST || "localhost", 
     user: process.env.DB_USER || "root",
     password: process.env.DB_PASSWORD || "",
-    database: process.env.DB_NAME || "smart_luggage"
+    database: process.env.DB_NAME || "smart_luggage",
+    port: 3306
 });
 
 db.connect((err) => {

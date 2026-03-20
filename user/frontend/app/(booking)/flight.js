@@ -1,243 +1,354 @@
 import React, { useState } from 'react';
 import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  TextInput, SafeAreaView, Platform, StatusBar, Modal, FlatList 
+  StyleSheet, View, Text, TouchableOpacity, TextInput, 
+  ScrollView, Modal, FlatList, Dimensions, Platform, Alert, KeyboardAvoidingView 
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { MotiView } from 'moti';
+import { router } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useRouter } from 'expo-router';
-import { router } from 'expo-router';
 
-const INDIAN_CITIES = ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Ahmedabad", "Chennai", "Kolkata", "Pune", "Goa"];
+const { width } = Dimensions.get('window');
+
+// List of serviceable PIN codes
+const SERVICEABLE_PINS = ['401303', '400001', '401202', '401208', '110001'];
+
+const AIRLINES = [
+  "AirIndia", "Indigo", "Vistara", "Akasa", "SpiceJet", "Emirates", "Ethiad", 
+  "Singapore Airlines", "Malaysian Airlines", "Thai Airways", "Cathy Pacific", 
+  "Lufthansa", "American Airlines", "United Airlines", "Swiss Air", "Qatar Airways", "British Airways"
+];
+
+const AIRPORTS = [
+  { id: '1', city: 'Mumbai', airport: 'Chhatrapati Shivaji Maharaj Intl', code: 'BOM' },
+  { id: '2', city: 'Bangalore', airport: 'Kempegowda International', code: 'BLR' },
+  { id: '3', city: 'Delhi', airport: 'Indira Gandhi Intl', code: 'DEL' },
+  { id: '4', city: 'Dubai', airport: 'Dubai Intl', code: 'DXB' },
+];
 
 export default function FlightDetails() {
-  const router = useRouter();
+  const [pinModalVisible, setPinModalVisible] = useState(true);
+  const [userPin, setUserPin] = useState('');
+
+  const [isInternational, setIsInternational] = useState(false);
+  const [airline, setAirline] = useState(null);
+  const [flightNo, setFlightNo] = useState('');
+  const [terminal, setTerminal] = useState('T2');
+  const [depCity, setDepCity] = useState(null);
+  const [arrCity, setArrCity] = useState(null);
   
-  // Form States
-  const [selectedAirline, setSelectedAirline] = useState('Indigo');
-  const [flightNumber, setFlightNumber] = useState('');
-  const [departureCity, setDepartureCity] = useState('');
-  const [arrivalCity, setArrivalCity] = useState('');
-  
-  // Date/Time States
   const [depDate, setDepDate] = useState(new Date());
   const [arrDate, setArrDate] = useState(new Date());
-  const [showDepPicker, setShowDepPicker] = useState(false);
-  const [showArrPicker, setShowArrPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState('date'); 
+  const [depTime, setDepTime] = useState(new Date());
+  const [arrTime, setArrTime] = useState(new Date());
+  const [showPicker, setShowPicker] = useState(null);
 
-  // Search Modal States
-  const [searchQuery, setSearchQuery] = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [activeField, setActiveField] = useState(''); 
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchType, setSearchType] = useState('dep'); 
+  const [searchText, setSearchText] = useState('');
 
-  const filteredCities = INDIAN_CITIES.filter(city => 
-    city.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const checkPinCode = () => {
+    if (userPin.length < 6) {
+      Alert.alert("Invalid", "Please enter a valid 6-digit PIN code.");
+      return;
+    }
 
-  const openCityPicker = (field) => {
-    setActiveField(field);
-    setSearchQuery('');
-    setModalVisible(true);
+    if (SERVICEABLE_PINS.includes(userPin)) {
+      setPinModalVisible(false); // Serviceable: stay on flight.js
+    } else {
+      Alert.alert(
+        "Service Unavailable", 
+        "Sorry, we cannot pick up luggage from this area.",
+        [{ text: "Go Back", onPress: () => router.replace('/(tabs)') }] // Redirect to (tabs)/index.js
+      );
+    }
   };
 
-  const selectDateOrTime = (field, mode) => {
-    setPickerMode(mode);
-    field === 'dep' ? setShowDepPicker(true) : setShowArrPicker(true);
+  const handleContinue = () => {
+    const flightData = { 
+      isInternational, airline, flightNo, terminal, 
+      depCity: depCity?.city, 
+      arrCity: arrCity?.city,
+      depDate: depDate.toLocaleDateString(),
+      arrDate: arrDate.toLocaleDateString(),
+      depTime: depTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: true}),
+      arrTime: arrTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: true})
+    };
+    router.push({ pathname: '/luggage', params: flightData });
+  };
+
+  const onPickerChange = (event, selectedValue) => {
+    if (Platform.OS === 'android') setShowPicker(null);
+    if (selectedValue) {
+        if (showPicker === 'depDate') setDepDate(selectedValue);
+        if (showPicker === 'arrDate') setArrDate(selectedValue);
+        if (showPicker === 'depTime') setDepTime(selectedValue);
+        if (showPicker === 'arrTime') setArrTime(selectedValue);
+    }
+  };
+
+  const filteredData = () => {
+    if (searchType === 'airline') return AIRLINES.filter(a => a.toLowerCase().includes(searchText.toLowerCase()));
+    return AIRPORTS.filter(a => a.city.toLowerCase().includes(searchText.toLowerCase()));
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color="#1A1C1E" /></TouchableOpacity>
-        <Text style={styles.headerTitle}>Flight Details</Text>
-        <View style={{ width: 24 }} />
-      </View>
+    <View style={styles.container}>
+      {/* PIN Modal - Larger Size and Proper Cancel Placement */}
+      <Modal visible={pinModalVisible} transparent={true} animationType="fade">
+        <View style={styles.pinOverlay}>
+          <KeyboardAvoidingView behavior="padding" style={styles.pinContent}>
+            <View style={styles.pinIconCircle}>
+                <MaterialCommunityIcons name="map-marker-radius" size={50} color="#FF4B2B" />
+            </View>
+            <Text style={styles.pinTitle}>Check Serviceability</Text>
+            <Text style={styles.pinSub}>Enter your area PIN code to proceed with the booking.</Text>
+            
+            <TextInput
+              style={styles.pinInput}
+              placeholder="000000"
+              keyboardType="number-pad"
+              maxLength={6}
+              value={userPin}
+              onChangeText={setUserPin}
+            />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Unified Stepper Progress */}
-        <View style={styles.stepperRow}>
-          <View style={styles.stepItem}>
-            <View style={[styles.stepCircle, styles.stepCurrent]}><Text style={styles.stepNum}>1</Text></View>
-            <Text style={styles.stepLabelActive}>Flight Info</Text>
-          </View>
-          <View style={styles.stepLine} />
-          <View style={styles.stepItem}>
-            <View style={styles.stepCircle}><Text style={styles.stepNumInactive}>2</Text></View>
-            <Text style={styles.stepLabel}>Luggage</Text>
-          </View>
-          <View style={styles.stepLine} />
-          <View style={styles.stepItem}>
-            <View style={styles.stepCircle}><Text style={styles.stepNumInactive}>3</Text></View>
-            <Text style={styles.stepLabel}>Pickup</Text>
-          </View>
-        </View>
-
-        <View style={styles.infoBanner}>
-          <View style={styles.blueIconCircle}><Ionicons name="airplane" size={20} color="#FFF" /></View>
-          <View style={styles.infoTextContainer}>
-            <Text style={styles.infoTitle}>Flight Information</Text>
-            <Text style={styles.infoSub}>Help us serve you better by sharing your flight details</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionLabel}>Select Airline</Text>
-        <View style={styles.airlineGrid}>
-          {['Indigo', 'Air India', 'SpiceJet', 'Akasa', 'Vistara', 'Other'].map((item) => (
-            <TouchableOpacity key={item} onPress={() => setSelectedAirline(item)}
-              style={[styles.airlineCard, selectedAirline === item && styles.airlineCardSelected]}>
-              <Text style={[styles.airlineText, selectedAirline === item && styles.airlineTextSelected]}>{item}</Text>
+            <TouchableOpacity style={styles.pinBtn} onPress={checkPinCode}>
+                <LinearGradient colors={['#FF4B2B', '#FF8C00']} style={styles.pinGradient}>
+                    <Text style={styles.pinBtnText}>Verify Area</Text>
+                </LinearGradient>
             </TouchableOpacity>
-          ))}
-        </View>
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>Flight Number</Text>
-          <TextInput 
-            style={styles.textInput} 
-            placeholder="E.G., AI 101" 
-            value={flightNumber}
-            onChangeText={setFlightNumber}
-          />
-        </View>
-
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>Route Details</Text>
-          <TouchableOpacity style={styles.dropdownInput} onPress={() => openCityPicker('dep')}>
-            <Ionicons name="location-outline" size={20} color="#FF3B2F" />
-            <Text style={[styles.inputText, !departureCity && {color: '#9CA3AF'}]}>
-              {departureCity || "Departure City"}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.swapContainer}>
-             <View style={styles.swapCircle}><Ionicons name="swap-vertical" size={18} color="#FF3B2F" /></View>
-          </View>
-
-          <TouchableOpacity style={styles.dropdownInput} onPress={() => openCityPicker('arr')}>
-            <Ionicons name="airplane-outline" size={20} color="#FF3B2F" />
-            <Text style={[styles.inputText, !arrivalCity && {color: '#9CA3AF'}]}>
-              {arrivalCity || "Arrival City"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>Departure Date & Time</Text>
-          <View style={styles.row}>
-            <TouchableOpacity style={[styles.dropdownInput, {flex: 1, marginRight: 8}]} onPress={() => selectDateOrTime('dep', 'date')}>
-              <Ionicons name="calendar-outline" size={18} color="#FF3B2F" />
-              <Text style={styles.dateTimeText}>{depDate.toLocaleDateString()}</Text>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.pinCancelBtn}>
+                <Text style={styles.pinCancelText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.dropdownInput, {flex: 0.8}]} onPress={() => selectDateOrTime('dep', 'time')}>
-              <Ionicons name="time-outline" size={18} color="#FF3B2F" />
-              <Text style={styles.dateTimeText}>{depDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionLabel}>Arrival Date & Time</Text>
-          <View style={styles.row}>
-            <TouchableOpacity style={[styles.dropdownInput, {flex: 1, marginRight: 8}]} onPress={() => selectDateOrTime('arr', 'date')}>
-              <Ionicons name="calendar-outline" size={18} color="#FF3B2F" />
-              <Text style={styles.dateTimeText}>{arrDate.toLocaleDateString()}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.dropdownInput, {flex: 0.8}]} onPress={() => selectDateOrTime('arr', 'time')}>
-              <Ionicons name="time-outline" size={18} color="#FF3B2F" />
-              <Text style={styles.dateTimeText}>{arrDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* UPDATED ACTION: Passing data to Luggage */}
-        <TouchableOpacity 
-  style={styles.nextBtn} 
-  onPress={() => router.push({
-    // Added the parentheses here to match your folder structure
-    pathname: '/(booking)/luggage', 
-    params: {
-      airline: selectedAirline,
-      flightNum: flightNumber,
-      depCity: departureCity,
-      arrCity: arrivalCity,
-      depTime: depDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-    }
-  })}
->
-  <LinearGradient 
-    colors={['#FF5F5F', '#FF8C00']} 
-    start={{x:0, y:0}} 
-    end={{x:1, y:0}} 
-    style={styles.gradient}
-  >
-    <Text style={styles.nextBtnText}>Continue to Luggage Details</Text>
-  </LinearGradient>
-</TouchableOpacity>
-
-        <View style={{ height: 60 }} />
-      </ScrollView>
-
-      {showDepPicker && <DateTimePicker value={depDate} mode={pickerMode} onChange={(e, d) => {setShowDepPicker(false); if(d) setDepDate(d);}} />}
-      {showArrPicker && <DateTimePicker value={arrDate} mode={pickerMode} onChange={(e, d) => {setShowArrPicker(false); if(d) setArrDate(d);}} />}
-
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <TextInput style={styles.searchInput} placeholder="Search City..." value={searchQuery} onChangeText={setSearchQuery} autoFocus />
-            <FlatList data={filteredCities} renderItem={({item}) => (
-              <TouchableOpacity style={styles.cityItem} onPress={() => { activeField === 'dep' ? setDepartureCity(item) : setArrivalCity(item); setModalVisible(false); }}>
-                <Text style={styles.cityText}>{item}</Text>
-              </TouchableOpacity>
-            )} />
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
-    </SafeAreaView>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {/* All other sections (Steps, Toggle, Fields) remain untouched as requested */}
+        <View style={styles.header}>
+           <TouchableOpacity onPress={() => router.back()}>
+             <MaterialCommunityIcons name="arrow-left" size={24} color="#000" />
+           </TouchableOpacity>
+           <Text style={styles.title}>Flight Details</Text>
+           <View style={{width: 24}} />
+        </View>
+
+        <View style={styles.stepContainer}>
+            <View style={styles.stepItem}>
+                <View style={[styles.stepCircle, styles.activeStep]}><Text style={styles.stepTextActive}>1</Text></View>
+                <Text style={styles.stepLabelActive}>Flight Info</Text>
+            </View>
+            <View style={styles.stepLine} />
+            <View style={styles.stepItem}>
+                <View style={styles.stepCircle}><Text style={styles.stepText}>2</Text></View>
+                <Text style={styles.stepLabel}>Luggage</Text>
+            </View>
+            <View style={styles.stepLine} />
+            <View style={styles.stepItem}>
+                <View style={styles.stepCircle}><Text style={styles.stepText}>3</Text></View>
+                <Text style={styles.stepLabel}>Pickup</Text>
+            </View>
+        </View>
+
+        <View style={styles.toggleWrapper}>
+            <View style={styles.toggleBg}>
+                <MotiView 
+                    animate={{ translateX: isInternational ? (width - 40) / 2 : 0 }}
+                    transition={{ type: 'timing', duration: 200 }}
+                    style={styles.slidingPill}
+                >
+                    <LinearGradient colors={['#FF4B2B', '#FF8C00']} style={styles.pillGradient} />
+                </MotiView>
+                <TouchableOpacity style={styles.toggleBtn} onPress={() => setIsInternational(false)}>
+                    <MaterialCommunityIcons name="airplane-takeoff" size={18} color={!isInternational ? "#FFF" : "#A0A0A0"} />
+                    <Text style={[styles.toggleBtnText, !isInternational && styles.activeBtnText]}>Domestic</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.toggleBtn} onPress={() => setIsInternational(true)}>
+                    <MaterialCommunityIcons name="earth" size={18} color={isInternational ? "#FFF" : "#A0A0A0"} />
+                    <Text style={[styles.toggleBtnText, isInternational && styles.activeBtnText]}>International</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+
+        <Text style={styles.inputLabel}>Select Airline</Text>
+        <TouchableOpacity style={styles.cityCard} onPress={() => {setSearchType('airline'); setSearchVisible(true);}}>
+            <View style={styles.iconCircle}><MaterialCommunityIcons name="airplane" size={20} color="#FF4B2B" /></View>
+            <View style={styles.cityInfo}>
+                <Text style={styles.cityName}>{airline ? airline : "Select Airline"}</Text>
+                <Text style={styles.airportName}>Choose your carrier</Text>
+            </View>
+        </TouchableOpacity>
+
+        <Text style={styles.inputLabel}>Departure City</Text>
+        <TouchableOpacity style={styles.cityCard} onPress={() => {setSearchType('dep'); setSearchVisible(true);}}>
+            <View style={styles.iconCircle}><MaterialCommunityIcons name="map-marker" size={20} color="#FF4B2B" /></View>
+            <View style={styles.cityInfo}>
+                <Text style={styles.cityName}>{depCity ? depCity.city : "Select Departure"}</Text>
+                <Text style={styles.airportName}>{depCity ? depCity.airport : "Choose your departure airport"}</Text>
+            </View>
+        </TouchableOpacity>
+
+        <Text style={styles.inputLabel}>Select Terminal</Text>
+        <View style={styles.terminalRow}>
+            {['T1', 'T2', 'T3'].map((t, idx) => (
+                <TouchableOpacity key={t} onPress={() => setTerminal(t)} style={styles.terminalBtnWrapper}>
+                    <View style={[styles.terminalBtn, terminal === t && styles.activeTerminal]}>
+                        {terminal === t && <LinearGradient colors={['#FF4B2B', '#FF8C00']} style={StyleSheet.absoluteFill} />}
+                        <Text style={[styles.terminalTxt, terminal === t && styles.activeBtnText]}>{t}</Text>
+                        <View style={[styles.perforation, terminal === t && {backgroundColor: 'rgba(255,255,255,0.4)'}]} />
+                        <Text style={[styles.terminalSub, terminal === t && styles.activeBtnText]}>Terminal {idx + 1}</Text>
+                    </View>
+                </TouchableOpacity>
+            ))}
+        </View>
+
+        <Text style={styles.inputLabel}>Arrival City</Text>
+        <TouchableOpacity style={styles.cityCard} onPress={() => {setSearchType('arr'); setSearchVisible(true);}}>
+            <View style={styles.iconCircle}><MaterialCommunityIcons name="airplane-landing" size={20} color="#FF4B2B" /></View>
+            <View style={styles.cityInfo}>
+                <Text style={styles.cityName}>{arrCity ? arrCity.city : "Select Arrival"}</Text>
+                <Text style={styles.airportName}>{arrCity ? arrCity.airport : "Choose your destination"}</Text>
+            </View>
+        </TouchableOpacity>
+
+        <Text style={styles.inputLabel}>Departure Date and Time</Text>
+        <View style={styles.sideBySideRow}>
+            <TouchableOpacity style={styles.dateBox} onPress={() => setShowPicker('depDate')}>
+                <MaterialCommunityIcons name="calendar-month" size={18} color="#FF4B2B" />
+                <Text style={styles.dateTimeValText}>{depDate.toLocaleDateString('en-GB')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.timeBox} onPress={() => setShowPicker('depTime')}>
+                <MaterialCommunityIcons name="clock-outline" size={18} color="#FF4B2B" />
+                <Text style={styles.dateTimeValText}>{depTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: true})}</Text>
+            </TouchableOpacity>
+        </View>
+
+        <Text style={styles.inputLabel}>Arrival Date and Time</Text>
+        <View style={styles.sideBySideRow}>
+            <TouchableOpacity style={styles.dateBox} onPress={() => setShowPicker('arrDate')}>
+                <MaterialCommunityIcons name="calendar-month" size={18} color="#FF4B2B" />
+                <Text style={styles.dateTimeValText}>{arrDate.toLocaleDateString('en-GB')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.timeBox} onPress={() => setShowPicker('arrTime')}>
+                <MaterialCommunityIcons name="clock-outline" size={18} color="#FF4B2B" />
+                <Text style={styles.dateTimeValText}>{arrTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: true})}</Text>
+            </TouchableOpacity>
+        </View>
+
+        {showPicker && (
+            <DateTimePicker 
+              value={new Date()} 
+              mode={showPicker.includes('Time') ? 'time' : 'date'} 
+              display="spinner"
+              is24Hour={false}
+              onChange={onPickerChange} 
+            />
+        )}
+
+        <TouchableOpacity style={styles.continueBtn} onPress={handleContinue}>
+            <LinearGradient colors={['#FF4B2B', '#FF8C00']} style={styles.gradientBtn}>
+                <Text style={styles.continueTxt}>Continue</Text>
+            </LinearGradient>
+        </TouchableOpacity>
+
+      </ScrollView>
+
+      <Modal visible={searchVisible} animationType="fade">
+        <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+                <TextInput style={styles.searchInput} placeholder={`Search ${searchType}...`} onChangeText={setSearchText} autoFocus />
+                <TouchableOpacity onPress={() => setSearchVisible(false)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
+            </View>
+            <FlatList 
+              data={filteredData()} 
+              renderItem={({item}) => (
+                <TouchableOpacity style={styles.resItem} onPress={() => { 
+                    if (searchType === 'airline') setAirline(item);
+                    else if (searchType === 'dep') setDepCity(item);
+                    else setArrCity(item);
+                    setSearchVisible(false); 
+                    setSearchText('');
+                }}>
+                    <Text style={styles.resCity}>{searchType === 'airline' ? item : `${item.city} (${item.code})`}</Text>
+                    {searchType !== 'airline' && <Text style={styles.resAir}>{item.airport}</Text>}
+                </TouchableOpacity>
+            )} />
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 10, paddingBottom: 10, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800' },
-  scrollContent: { paddingHorizontal: 20 },
-  stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 20 },
+  container: { flex: 1, backgroundColor: '#FFF' },
+  scroll: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 40 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  title: { fontSize: 22, fontWeight: '700', color: '#000' },
+
+  // Updated PIN Modal Styles
+  pinOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  pinContent: { width: width * 0.9, backgroundColor: '#FFF', borderRadius: 30, padding: 30, alignItems: 'center', elevation: 10 },
+  pinIconCircle: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#FFF5F3', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+  pinTitle: { fontSize: 22, fontWeight: '800', color: '#1A1A1A' },
+  pinSub: { fontSize: 13, color: '#7D848D', textAlign: 'center', marginVertical: 15, lineHeight: 18 },
+  pinInput: { width: '100%', height: 60, backgroundColor: '#F5F7FA', borderRadius: 15, textAlign: 'center', fontSize: 26, fontWeight: '700', color: '#FF4B2B', marginBottom: 25 },
+  pinBtn: { width: '100%', borderRadius: 15, overflow: 'hidden' },
+  pinGradient: { paddingVertical: 18, alignItems: 'center' },
+  pinBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  pinCancelBtn: { marginTop: 20, padding: 10 },
+  pinCancelText: { color: '#999', fontWeight: '700', fontSize: 14 },
+
+  stepContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
   stepItem: { alignItems: 'center' },
-  stepCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center' },
-  stepCurrent: { backgroundColor: '#FF3B2F' },
-  stepNum: { color: '#FFF', fontWeight: 'bold' },
-  stepNumInactive: { color: '#9CA3AF', fontWeight: 'bold' },
-  stepLabelActive: { fontSize: 11, color: '#1A1C1E', marginTop: 4, fontWeight: '700' },
-  stepLabel: { fontSize: 11, color: '#9CA3AF', marginTop: 4 },
-  stepLine: { width: 50, height: 2, backgroundColor: '#E5E7EB', marginHorizontal: 10, marginTop: -15 },
-  infoBanner: { backgroundColor: '#EEF2FF', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#D0DBFF' },
-  blueIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center' },
-  infoTextContainer: { marginLeft: 12, flex: 1 },
-  infoTitle: { fontWeight: '800', fontSize: 16, color: '#1E3A8A' },
-  infoSub: { fontSize: 12, color: '#3B82F6', marginTop: 2 },
-  sectionLabel: { fontSize: 14, fontWeight: '700', marginBottom: 12, color: '#4B5563' },
-  airlineGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 },
-  airlineCard: { width: '31%', paddingVertical: 12, backgroundColor: '#FFF', borderRadius: 12, alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#F3F4F6' },
-  airlineCardSelected: { borderColor: '#FF3B2F', backgroundColor: '#FFF9F9' },
-  airlineText: { fontSize: 12, fontWeight: '600' },
-  airlineTextSelected: { color: '#FF3B2F' },
-  sectionCard: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 15 },
-  textInput: { backgroundColor: '#F3F4F6', padding: 15, borderRadius: 12, fontSize: 15, fontWeight: '600' },
-  dropdownInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 12, padding: 12 },
-  inputText: { marginLeft: 10, fontSize: 14, fontWeight: '600' },
-  dateTimeText: { marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#1A1C1E' },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  swapContainer: { alignItems: 'center', marginVertical: -8, zIndex: 1 },
-  swapCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#F3F4F6' },
-  nextBtn: { marginTop: 10 },
-  gradient: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  nextBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFF', height: '70%', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  searchInput: { backgroundColor: '#F3F4F6', padding: 15, borderRadius: 12, marginBottom: 15 },
-  cityItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  cityText: { fontSize: 16, fontWeight: '600' }
+  stepCircle: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center' },
+  activeStep: { backgroundColor: '#FF4B2B' },
+  stepText: { color: '#999', fontWeight: '700' },
+  stepTextActive: { color: '#FFF', fontWeight: '700' },
+  stepLabel: { fontSize: 10, color: '#999', marginTop: 4 },
+  stepLabelActive: { fontSize: 10, color: '#333', fontWeight: '600', marginTop: 4 },
+  stepLine: { width: 40, height: 2, backgroundColor: '#F0F0F0', marginHorizontal: 10, marginBottom: 15 },
+
+  toggleWrapper: { marginBottom: 30 },
+  toggleBg: { height: 56, backgroundColor: '#F5F7FA', borderRadius: 28, flexDirection: 'row', padding: 4 },
+  slidingPill: { position: 'absolute', width: '50%', height: '100%', top: 4, left: 4, borderRadius: 24 },
+  pillGradient: { flex: 1, borderRadius: 24 },
+  toggleBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', zIndex: 1 },
+  toggleBtnText: { marginLeft: 8, fontWeight: '700', color: '#A0A0A0', fontSize: 14 },
+  activeBtnText: { color: '#FFF' },
+
+  inputLabel: { fontSize: 14, fontWeight: '700', color: '#444', marginBottom: 10, marginTop: 10 },
+  cityCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', padding: 16, borderRadius: 18, marginBottom: 15, borderWidth: 1, borderColor: '#F1F5F9' },
+  iconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  cityInfo: { marginLeft: 15 },
+  cityName: { fontSize: 16, fontWeight: '700', color: '#000' },
+  airportName: { fontSize: 11, color: '#7D848D', marginTop: 2 },
+
+  terminalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  terminalBtnWrapper: { width: (width - 60) / 3 },
+  terminalBtn: { height: 85, backgroundColor: '#FFF', borderRadius: 14, borderWidth: 1, borderColor: '#F0F2F5', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  activeTerminal: { elevation: 3, shadowColor: '#FF4B2B', shadowOpacity: 0.15 },
+  terminalTxt: { fontSize: 22, fontWeight: '800', color: '#1A1A1A' },
+  perforation: { width: '60%', height: 1, backgroundColor: '#EEE', marginVertical: 8, borderStyle: 'dashed' },
+  terminalSub: { fontSize: 9, fontWeight: '600', color: '#7D848D' },
+
+  sideBySideRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  dateBox: { flex: 1.4, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', padding: 16, borderRadius: 16, marginRight: 10 },
+  timeBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F7FA', padding: 16, borderRadius: 16 },
+  dateTimeValText: { marginLeft: 10, fontWeight: '700', color: '#1A1A1A', fontSize: 14 },
+
+  continueBtn: { marginTop: 30, borderRadius: 18, overflow: 'hidden' },
+  gradientBtn: { paddingVertical: 18, alignItems: 'center' },
+  continueTxt: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+
+  modal: { flex: 1, backgroundColor: '#FFF', paddingTop: 60 },
+  modalHeader: { flexDirection: 'row', padding: 20, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  searchInput: { flex: 1, backgroundColor: '#F5F7FA', padding: 12, borderRadius: 10 },
+  cancelText: { marginLeft: 15, color: '#FF4B2B', fontWeight: '700' },
+  resItem: { padding: 20, borderBottomWidth: 1, borderBottomColor: '#F5F7FA' },
+  resCity: { fontSize: 16, fontWeight: '700' },
+  resAir: { fontSize: 12, color: '#999' }
 });

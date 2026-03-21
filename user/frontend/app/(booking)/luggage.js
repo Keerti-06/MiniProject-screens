@@ -1,37 +1,43 @@
 import React, { useState } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  Image, SafeAreaView, Platform, StatusBar 
+  Image, SafeAreaView, Platform, StatusBar, Alert 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter, useLocalSearchParams } from 'expo-router'; // ADDED PARAM HOOK
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 export default function LuggageDetails() {
   const router = useRouter();
-  const flightParams = useLocalSearchParams(); // CATCHING PREVIOUS DATA
+  const flightParams = useLocalSearchParams();
   
   const [bagCount, setBagCount] = useState(1);
-  const [selectedTypes, setSelectedTypes] = useState(['checkin']);
   const [selectedWeight, setSelectedWeight] = useState('10-20 kg');
   const [photos, setPhotos] = useState([]);
+  const [checkinSelected, setCheckinSelected] = useState(false); 
+  const [fragile, setFragile] = useState(false);
 
-  const toggleType = (id) => {
-    setSelectedTypes(prev => 
-      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
-    );
-  };
+  // UPDATED LOGIC: Supports Multiple Gallery Selection & Continuous Camera
+  const pickImage = async (useCamera = true, indexToReplace = null) => {
+    let status;
+    if (useCamera) {
+      const cameraResp = await ImagePicker.requestCameraPermissionsAsync();
+      status = cameraResp.status;
+    } else {
+      const libraryResp = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      status = libraryResp.status;
+    }
 
-  const takePhoto = async (indexToReplace = null) => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
-    if (status === 'granted') {
-      let result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false, 
-        quality: 0.8,
-      });
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', `We need ${useCamera ? 'camera' : 'gallery'} permissions.`);
+      return;
+    }
 
+    if (useCamera) {
+      // Camera Loop: Allows clicking as many as you want until "Cancel"
+      let result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 0.8 });
+      
       if (!result.canceled) {
         const newUri = result.assets[0].uri;
         if (indexToReplace !== null) {
@@ -39,7 +45,30 @@ export default function LuggageDetails() {
           updatedPhotos[indexToReplace] = newUri;
           setPhotos(updatedPhotos);
         } else {
-          setPhotos([...photos, newUri]);
+          setPhotos(prev => [...prev, newUri]);
+          // Recursively call again to allow "as many times as I want"
+          Alert.alert("Photo Added", "Would you like to take another?", [
+            { text: "No, I'm Done", style: "cancel" },
+            { text: "Take Another", onPress: () => pickImage(true) }
+          ]);
+        }
+      }
+    } else {
+      // Gallery: Allows Multiple Selection
+      let result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: true,
+        selectionLimit: 10, 
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        const selectedUris = result.assets.map(asset => asset.uri);
+        if (indexToReplace !== null) {
+          const updatedPhotos = [...photos];
+          updatedPhotos[indexToReplace] = selectedUris[0];
+          setPhotos(updatedPhotos);
+        } else {
+          setPhotos(prev => [...prev, ...selectedUris]);
         }
       }
     }
@@ -51,12 +80,13 @@ export default function LuggageDetails() {
         <TouchableOpacity onPress={() => router.back()} style={styles.headerAction}>
           <Ionicons name="arrow-back" size={24} color="#1A1C1E" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Book Pickup</Text>
+        <Text style={styles.headerTitle}>Luggage Details</Text>
         <View style={styles.headerAction} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
+        {/* Stepper */}
         <View style={styles.stepperRow}>
           <View style={styles.stepItem}>
             <View style={[styles.stepCircle, styles.stepCompleted]}>
@@ -80,6 +110,7 @@ export default function LuggageDetails() {
           </View>
         </View>
 
+        {/* Info Banner */}
         <View style={styles.infoBanner}>
           <View style={styles.orangeIconCircle}><Ionicons name="cube" size={20} color="#FFF" /></View>
           <View style={styles.infoTextContainer}>
@@ -88,6 +119,7 @@ export default function LuggageDetails() {
           </View>
         </View>
 
+        {/* Bag Counter */}
         <View style={styles.sectionCard}>
           <Text style={styles.innerLabel}>How many bags?</Text>
           <View style={styles.counterMainRow}>
@@ -104,26 +136,40 @@ export default function LuggageDetails() {
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>Luggage Type (Select all that apply)</Text>
-        <View style={styles.gridContainer}>
-          {[
-            { id: 'cabin', label: 'Cabin', sub: 'Up to 7kg', icon: '🎒' },
-            { id: 'checkin', label: 'Check-in', sub: 'Up to 23kg', icon: '🧳' },
-            { id: 'oversized', label: 'Oversized', sub: 'Heavy items', icon: '📦' },
-            { id: 'fragile', label: 'Fragile', sub: 'Handle with care', icon: '⚠️' }
-          ].map((item) => (
-            <TouchableOpacity 
-              key={item.id} 
-              onPress={() => toggleType(item.id)}
-              style={[styles.gridItem, selectedTypes.includes(item.id) && styles.gridItemActive]}
-            >
-              <Text style={{fontSize: 24, marginBottom: 8}}>{item.icon}</Text>
-              <Text style={[styles.gridLabel, selectedTypes.includes(item.id) && styles.gridLabelActive]}>{item.label}</Text>
-              <Text style={styles.gridSub}>{item.sub}</Text>
-            </TouchableOpacity>
-          ))}
+        {/* Luggage Type Card */}
+        <Text style={styles.sectionLabel}>Luggage Type</Text>
+        <TouchableOpacity 
+          style={[styles.gridItem, checkinSelected && styles.gridItemActive]}
+          onPress={() => {
+            if (checkinSelected) {
+              setCheckinSelected(false);
+              setFragile(false); 
+            } else {
+              setCheckinSelected(true);
+              setFragile(false); 
+            }
+          }}
+        >
+          <Text style={{fontSize: 24, marginBottom: 8}}>🧳</Text>
+          <Text style={[styles.gridLabel, checkinSelected && styles.gridLabelActive]}>Check-in</Text>
+          <Text style={styles.gridSub}>Up to 25kg</Text>
+        </TouchableOpacity>
+
+        {checkinSelected && (
+          <TouchableOpacity style={styles.fragileRow} onPress={() => setFragile(!fragile)}>
+            <View style={[styles.checkbox, fragile && styles.checkboxActive]}>
+              {fragile && <Ionicons name="checkmark" size={16} color="#FFF" />}
+            </View>
+            <Text style={styles.fragileText}>Contains fragile items</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.disclaimerCard}>
+          <Ionicons name="alert-circle" size={16} color="#B91C1C" />
+          <Text style={styles.disclaimerText}> Ensure your ticket allows check-in luggage.</Text>
         </View>
 
+        {/* Weight Selection */}
         <Text style={styles.sectionLabel}>Total Weight (approx.)</Text>
         <View style={styles.weightGrid}>
           {['Under 10 kg', '10-20 kg', '20-30 kg', 'Over 30 kg'].map((weight) => (
@@ -137,60 +183,71 @@ export default function LuggageDetails() {
           ))}
         </View>
 
+        {/* Photo Proof */}
         <Text style={styles.sectionLabel}>Photo Proof (Optional)</Text>
         <View style={styles.sectionCard}>
           {photos.length === 0 ? (
-            <TouchableOpacity style={styles.uploadBox} onPress={() => takePhoto()}>
+            <View style={styles.uploadBox}>
               <Ionicons name="camera-outline" size={32} color="#D1D5DB" />
-              <Text style={styles.uploadText}>Capture Bag Photos</Text>
+              <Text style={styles.uploadText}>Add Bag Photos</Text>
               <Text style={styles.uploadSubText}>Keep the full bag in view</Text>
-            </TouchableOpacity>
-          ) : (
-            <View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
-                {photos.map((uri, index) => (
-                  <View key={index} style={styles.photoContainer}>
-                    <Image source={{ uri }} style={styles.previewImg} resizeMode="cover" />
-                    <TouchableOpacity style={styles.retakeOverlay} onPress={() => takePhoto(index)}>
-                      <Ionicons name="refresh" size={14} color="#FFF" />
-                      <Text style={styles.retakeText}>Retake</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.deleteBtn} onPress={() => setPhotos(photos.filter((_, i) => i !== index))}>
-                      <Ionicons name="close-circle" size={20} color="#FF3B2F" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                <TouchableOpacity style={styles.addMoreBtn} onPress={() => takePhoto()}>
-                  <Ionicons name="add" size={30} color="#D1D5DB" />
+              
+              <View style={styles.uploadActionRow}>
+                <TouchableOpacity style={styles.miniUploadBtn} onPress={() => pickImage(true)}>
+                  <Ionicons name="camera" size={18} color="#FF5F5F" />
+                  <Text style={styles.miniBtnText}>Camera</Text>
                 </TouchableOpacity>
-              </ScrollView>
+                <TouchableOpacity style={styles.miniUploadBtn} onPress={() => pickImage(false)}>
+                  <Ionicons name="images" size={18} color="#FF5F5F" />
+                  <Text style={styles.miniBtnText}>Gallery</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.gallery}>
+              {photos.map((uri, index) => (
+                <View key={index} style={styles.photoContainer}>
+                  <Image source={{ uri }} style={styles.previewImg} resizeMode="cover" />
+                  <TouchableOpacity style={styles.retakeOverlay} onPress={() => pickImage(true, index)}>
+                    <Ionicons name="refresh" size={14} color="#FFF" />
+                    <Text style={styles.retakeText}>Retake</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.deleteBtn} onPress={() => setPhotos(photos.filter((_, i) => i !== index))}>
+                    <Ionicons name="close-circle" size={20} color="#FF3B2F" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <TouchableOpacity style={styles.addMoreBtn} onPress={() => pickImage(true)}>
+                <Ionicons name="add" size={30} color="#D1D5DB" />
+              </TouchableOpacity>
+            </ScrollView>
           )}
         </View>
 
-        {/* UPDATED ACTION: Passing BOTH Flight and Luggage data to Pickup */}
+        {/* Continue Button */}
         <TouchableOpacity 
-  style={styles.nextBtn} 
-  onPress={() => router.push({
-    // Added the parentheses here to correctly target the (booking) group
-    pathname: '/(booking)/pickup', 
-    params: {
-      ...flightParams, // Airline, Flight, Route, Time
-      bags: bagCount,
-      weight: selectedWeight,
-      luggageTypes: selectedTypes.join(', ')
-    }
-  })}
->
-  <LinearGradient 
-    colors={['#FF5F5F', '#FF8C00']} 
-    start={{x:0, y:0}} 
-    end={{x:1, y:0}} 
-    style={styles.gradient}
-  >
-    <Text style={styles.nextBtnText}>Continue to Pickup Details</Text>
-  </LinearGradient>
-</TouchableOpacity>
+          style={styles.nextBtn} 
+          onPress={() => router.push({
+            pathname: '/(booking)/pickup', 
+            params: {
+              ...flightParams, 
+              bags: bagCount,
+              weight: selectedWeight,
+              fragile: fragile,
+              checkin: checkinSelected,
+              photos: JSON.stringify(photos) 
+            }
+          })}
+        >
+          <LinearGradient 
+            colors={['#FF5F5F', '#FF8C00']} 
+            start={{x:0, y:0}} 
+            end={{x:1, y:0}} 
+            style={styles.gradient}
+          >
+            <Text style={styles.nextBtnText}>Continue to Pickup Details</Text>
+          </LinearGradient>
+        </TouchableOpacity>
 
         <View style={{ height: 60 }} />
       </ScrollView>
@@ -220,7 +277,7 @@ const styles = StyleSheet.create({
   infoTitle: { fontWeight: '800', fontSize: 16, color: '#1A1C1E' },
   infoSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
   sectionLabel: { fontSize: 14, fontWeight: '700', marginBottom: 12, color: '#1A1C1E', marginTop: 10 },
-  sectionCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginBottom: 15, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
+  sectionCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginBottom: 15, elevation: 3 },
   innerLabel: { fontSize: 15, fontWeight: '700', color: '#1A1C1E', marginBottom: 15 },
   counterMainRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F3F4F6', borderRadius: 16, padding: 8 },
   counterSquareBtn: { width: 48, height: 48, backgroundColor: '#FFF', borderRadius: 12, justifyContent: 'center', alignItems: 'center', elevation: 2 },
@@ -228,12 +285,17 @@ const styles = StyleSheet.create({
   counterDisplay: { alignItems: 'center' },
   counterBigNum: { fontSize: 24, fontWeight: '800', color: '#1A1C1E' },
   counterSubText: { fontSize: 12, color: '#9CA3AF', marginTop: -4 },
-  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 15 },
   gridItem: { width: '48%', backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F3F4F6', elevation: 2 },
   gridItemActive: { borderColor: '#FF3B2F', backgroundColor: '#FFF9F9' },
   gridLabel: { fontSize: 14, fontWeight: '700', color: '#4B5563' },
   gridLabelActive: { color: '#FF3B2F' },
   gridSub: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  fragileRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, marginBottom: 10 },
+  fragileText: { marginLeft: 8, fontSize: 13, fontWeight: '600', color: '#1A1C1E' },
+  checkbox: { width: 18, height: 18, borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
+  checkboxActive: { backgroundColor: '#FF3B2F', borderColor: '#FF3B2F' },
+  disclaimerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3F2', borderRadius: 12, padding: 10, marginBottom: 20, borderWidth: 1, borderColor: '#FECACA' },
+  disclaimerText: { fontSize: 13, color: '#B91C1C', marginLeft: 5 },
   weightGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   weightBtn: { width: '48%', height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center', marginBottom: 10, backgroundColor: '#FFF' },
   weightBtnActive: { borderColor: '#FF3B2F', backgroundColor: '#FFF9F9' },
@@ -242,6 +304,9 @@ const styles = StyleSheet.create({
   uploadBox: { padding: 20, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 16, alignItems: 'center' },
   uploadText: { marginTop: 8, fontSize: 14, fontWeight: '700', color: '#4B5563' },
   uploadSubText: { fontSize: 11, color: '#9CA3AF', marginTop: 4 },
+  uploadActionRow: { flexDirection: 'row', marginTop: 15, width: '100%', justifyContent: 'space-evenly' },
+  miniUploadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF5F5', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FFECEC' },
+  miniBtnText: { marginLeft: 6, fontSize: 12, fontWeight: '700', color: '#FF5F5F' },
   gallery: { marginTop: 5 },
   photoContainer: { marginRight: 15, position: 'relative', paddingVertical: 10 },
   previewImg: { width: 120, height: 120, borderRadius: 12 },

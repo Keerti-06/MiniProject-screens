@@ -66,6 +66,8 @@ export default function LoginScreen() {
           });
         } else {
           // Success: Pass the name from DB to the dashboard
+          global.userPhone = data.user.phone;
+          console.log("LOGIN PHONE:", global.userPhone);
           router.replace({
             pathname: "/(tabs)",
             params: { userName: data.user?.name || "User" }

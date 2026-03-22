@@ -131,4 +131,33 @@ router.post("/login", (req, res) => {
     });
 });
 
+// ---------------- GET USER PROFILE ----------------
+// Access this at: http://YOUR_IP:5000/api/auth/user-profile?phone=XXXXXXXXXX
+router.get("/user-profile", (req, res) => {
+    const phone = req.query.phone;
+
+    if (!phone) {
+        return res.json({ success: false, message: "Phone required" });
+    }
+
+    const query = "SELECT name, phone, email FROM users WHERE phone = ? LIMIT 1";
+
+    db.query(query, [phone], (err, results) => {
+        if (err) {
+            console.log(err);
+            return res.json({ success: false });
+        }
+
+        if (results.length > 0) {
+            return res.json({
+                success: true,
+                name: results[0].name,
+                phone: results[0].phone,
+                email: results[0].email
+            });
+        } else {
+            return res.json({ success: false, message: "User not found" });
+        }
+    });
+});
 module.exports = router;

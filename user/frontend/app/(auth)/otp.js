@@ -28,7 +28,8 @@ export default function OtpScreen() {
         if (data.user?.name) {
           await AsyncStorage.setItem("userName", data.user.name);
         }
-        
+         global.userPhone = data.user.phone;
+         console.log("LOGIN PHONE:", global.userPhone);
         // Navigate to tabs
         router.replace('/(tabs)'); 
       }

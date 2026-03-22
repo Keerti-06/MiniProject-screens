@@ -58,6 +58,16 @@ export default function TabLayout() {
           ),
         }}
       />
+
+      {/* NEW: This adds the report screen to the Tabs navigator 
+          but 'href: null' keeps it hidden from the bottom bar.
+      */}
+      <Tabs.Screen
+        name="report"
+        options={{
+          href: null, 
+        }}
+      />
     </Tabs>
   );
 }

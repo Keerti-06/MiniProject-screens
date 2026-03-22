@@ -21,6 +21,9 @@ app.use((req, res, next) => {
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.get("/", (req, res) => {
+  res.send("Server is working ✅");
+});
 
 // Global Error Handler
 app.use((err, req, res, next) => {
